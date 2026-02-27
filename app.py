@@ -55,36 +55,37 @@ returns = data.pct_change().dropna()
 # -------------------
 
 def backtest(returns, w_sp, w_gold, rebalance):
-    portfolio_value = 1
-    values = []
 
-    current_w_sp = w_sp
-    current_w_gold = w_gold
+    sp_value = w_sp
+    gold_value = w_gold
+
+    values = []
 
     for date, row in returns.iterrows():
         r_sp = row["SP500"]
         r_gold = row["Gold"]
 
-        portfolio_value *= (
-            current_w_sp * (1 + r_sp)
-            + current_w_gold * (1 + r_gold)
-        )
+        # 각 자산 개별 성장
+        sp_value *= (1 + r_sp)
+        gold_value *= (1 + r_gold)
 
-        values.append(portfolio_value)
+        total_value = sp_value + gold_value
+        values.append(total_value)
 
+        # 리밸런싱 시점
         if rebalance == "Daily":
-            current_w_sp = w_sp
-            current_w_gold = w_gold
+            sp_value = total_value * w_sp
+            gold_value = total_value * w_gold
 
         elif rebalance == "Monthly":
             if date.is_month_end:
-                current_w_sp = w_sp
-                current_w_gold = w_gold
+                sp_value = total_value * w_sp
+                gold_value = total_value * w_gold
 
         elif rebalance == "Yearly":
             if date.month == 12 and date.is_month_end:
-                current_w_sp = w_sp
-                current_w_gold = w_gold
+                sp_value = total_value * w_sp
+                gold_value = total_value * w_gold
 
     return pd.Series(values, index=returns.index)
 
