@@ -14,8 +14,11 @@ weight_sp = weight_sp / 100
 weight_gold = 1 - weight_sp
 
 # 데이터 다운로드
-sp = yf.download("^GSPC", start="1970-01-01", interval="1mo")["Adj Close"]
-gold = yf.download("GLD", start="1970-01-01", interval="1mo")["Adj Close"]
+sp = yf.download("^GSPC", start="1970-01-01", interval="1mo", auto_adjust=True)
+gold = yf.download("GLD", start="1970-01-01", interval="1mo", auto_adjust=True)
+
+sp = sp["Close"]
+gold = gold["Close"]
 
 data = pd.concat([sp, gold], axis=1)
 data.columns = ["SP500", "Gold"]
