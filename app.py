@@ -26,8 +26,23 @@ start_date = "1970-01-01"
 # 데이터 다운로드
 # -------------------
 
-sp = yf.download("^SP500TR", start=start_date)["Adj Close"]
-gold = yf.download("GC=F", start=start_date)["Adj Close"]
+# -------------------
+# 데이터 다운로드 (안정 버전)
+# -------------------
+
+sp_raw = yf.download("^SP500TR", start=start_date, auto_adjust=True)
+gold_raw = yf.download("GC=F", start=start_date, auto_adjust=True)
+
+# MultiIndex 방지
+if isinstance(sp_raw.columns, pd.MultiIndex):
+    sp = sp_raw["Close"]
+else:
+    sp = sp_raw["Close"]
+
+if isinstance(gold_raw.columns, pd.MultiIndex):
+    gold = gold_raw["Close"]
+else:
+    gold = gold_raw["Close"]
 
 data = pd.concat([sp, gold], axis=1)
 data.columns = ["SP500", "Gold"]
