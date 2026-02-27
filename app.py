@@ -112,10 +112,7 @@ rolling_cagr = (
 
 initial_value = 1000
 
-# 일간 수익률 기반 누적 가치
-cumulative = (1 + portfolio_returns).cumprod()
-
-portfolio_value = initial_value * cumulative
+portfolio_value_scaled = portfolio * initial_value
 
 # -------------------
 # 그래프 출력
@@ -131,13 +128,10 @@ st.pyplot(fig)
 # 그래프 출력 - 토탈리턴 그래프
 # -------------------
 
-st.subheader("Portfolio Growth (Start = 1000)")
-
 fig2, ax2 = plt.subplots()
-ax2.plot(portfolio_value)
+ax2.plot(portfolio_value_scaled)
 ax2.set_ylabel("Portfolio Value")
 ax2.set_xlabel("Date")
-
 st.pyplot(fig2)
 
 # -------------------
