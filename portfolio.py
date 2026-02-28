@@ -2,23 +2,25 @@ import pandas as pd
 import numpy as np
 
 def backtest(returns, weights, rebalance_option="Monthly"):
-    # 수익률 데이터가 너무 크거나 작으면(상폐 등) 에러가 날 수 있으므로 제한
-    returns = returns.clip(lower=-0.99) # 자산 가치가 0 이하로 가는 것 방지
+    # 수익률 데이터 클리닝 및 하한선 제한
+    returns = returns.fillna(0).clip(lower=-0.99)
     
     w = pd.Series(weights)
     portfolio_values = []
-    current_val = 1.0
+    current_val = 1.0 
     current_weights = w.copy()
     
     for date, monthly_ret in returns.iterrows():
-        # 자산별 수익 반영
+        # 수익률이 모두 0인 구간(데이터 시작 전)은 가치를 유지
+        if monthly_ret.sum() == 0 and current_val == 1.0:
+            portfolio_values.append(current_val)
+            continue
+
         asset_values = current_weights * (1 + monthly_ret)
-        
-        # 이번 달 포트폴리오 전체 수익률 가중치 합산
         port_ret = asset_values.sum()
         
-        # 포트폴리오 가치 업데이트
-        current_val *= port_ret
+        # 가치 업데이트 (0이 되지 않도록 최소값 유지)
+        current_val = max(current_val * port_ret, 1e-6)
         portfolio_values.append(current_val)
         
         # 리밸런싱
@@ -27,7 +29,6 @@ def backtest(returns, weights, rebalance_option="Monthly"):
         elif rebalance_option == "Yearly" and date.month == 12:
             current_weights = w.copy()
         else:
-            # 리밸런싱 안 할 때는 변화된 가치 비중 유지
-            current_weights = asset_values / port_ret
+            current_weights = asset_values / port_ret if port_ret > 0 else current_weights
             
     return pd.Series(portfolio_values, index=returns.index)
