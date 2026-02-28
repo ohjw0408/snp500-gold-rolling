@@ -10,6 +10,75 @@ st.set_page_config(page_title="Custom Asset Analyzer", layout="wide")
 st.title("🚀 내 맘대로 자산배분 테스터")
 
 # -------------------
+# 1. 사용자 입력 (Sidebar) - 자동 비중 조절 버전
+# -------------------
+with st.sidebar:
+    st.header("1. 자산 설정")
+    ticker_input = st.text_input("티커 입력 (쉼표로 구분)", "SPY, TLT, GLD, BTC-USD")
+    tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
+
+    st.header("2. 비중 설정")
+    
+    # 세션 상태 초기화 (처음 실행 시 비중을 균등하게 배분)
+    if 'weights' not in st.session_state or set(st.session_state.tickers) != set(tickers):
+        st.session_state.tickers = tickers
+        n = len(tickers)
+        for t in tickers:
+            st.session_state[f"w_{t}"] = 100 // n
+
+    def on_weight_change(changed_ticker):
+        # 방금 변경된 슬라이더의 값
+        new_val = st.session_state[f"w_{changed_ticker}"]
+        other_tickers = [t for t in tickers if t != changed_ticker]
+        
+        if not other_tickers:
+            st.session_state[f"w_{changed_ticker}"] = 100
+            return
+
+        # 나머지 자산들이 나눠 가져야 할 총합
+        remaining = 100 - new_val
+        if remaining < 0:
+            st.session_state[f"w_{changed_ticker}"] = 100
+            remaining = 0
+            
+        # 나머지 자산들의 현재 비중 합계
+        current_other_sum = sum(st.session_state[f"w_{t}"] for t in other_tickers)
+        
+        if current_other_sum > 0:
+            for t in other_tickers:
+                # 현재 비율을 유지하며 남은 비중을 배분
+                ratio = st.session_state[f"w_{t}"] / current_other_sum
+                st.session_state[f"w_{t}"] = int(remaining * ratio)
+        else:
+            # 다른 비중이 모두 0이었다면 균등 배분
+            for t in other_tickers:
+                st.session_state[f"w_{t}"] = remaining // len(other_tickers)
+
+    # 슬라이더 생성
+    weights = {}
+    for ticker in tickers:
+        # st.slider는 클릭하면 키보드로 숫자 입력이 가능합니다 (Label 클릭 후 화살표나 숫자)
+        # 더 명시적인 입력을 원하시면 label 옆에 숫자를 표시합니다.
+        w = st.sidebar.slider(
+            f"{ticker} 비중 (%)", 
+            0, 100, 
+            key=f"w_{ticker}", 
+            on_change=on_weight_change, 
+            args=(ticker,)
+        )
+        weights[ticker] = w / 100
+
+    total_w = sum(st.session_state[f"w_{t}"] for t in tickers)
+    st.write(f"**현재 합계: {total_w}%**")
+    
+    if total_w != 100:
+        # 반올림 오차 등으로 100이 안될 경우 보정 버튼
+        if st.button("100% 맞춤 보정"):
+            diff = 100 - total_w
+            st.session_state[f"w_{tickers[0]}"] += diff
+            st.rerun()
+
+# -------------------
 # 1. 사용자 입력 (Sidebar)
 # -------------------
 with st.sidebar:
