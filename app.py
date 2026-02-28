@@ -82,11 +82,13 @@ if abs(total_w - 1.0) < 0.001 and tickers:
                     mdd = calculate_mdd(portfolio)
 
                     col1, col2 = st.columns(2)
+                    # ... app.py의 결과 출력 부분 수정 ...
                     with col1:
-                        st.subheader("📈 자산 성장 곡선")
+                        st.subheader("📈 원화 자산 성장 곡선")
                         fig1, ax1 = plt.subplots()
-                        ax1.plot(portfolio * 1000, label="Portfolio")
-                        ax1.set_yscale('log') # 장기 데이터이므로 로그 스케일 권장
+                        # 1,000만 원 투자 기준
+                        ax1.plot(portfolio * 10000000, label="Portfolio (KRW)")
+                        ax1.set_yscale('log')
                         ax1.legend()
                         st.pyplot(fig1)
                     
@@ -103,9 +105,9 @@ if abs(total_w - 1.0) < 0.001 and tickers:
                             st.info(f"롤링 분석을 하려면 최소 {years}년 이상의 데이터가 필요합니다.")
 
                     st.divider()
-                    st.subheader("🔢 성과 요약")
+                    st.subheader("🔢 원화 기준 성과 요약")
                     m1, m2, m3 = st.columns(3)
-                    m1.metric("최종 가치", f"${(portfolio.iloc[-1]*1000):,.2f}")
+                    m1.metric("최종 가치", f"{(portfolio.iloc[-1]*10000000):,.0f}원")
                     avg_r = f"{(rolling_cagr.mean()*100):.2f}%" if 'rolling_cagr' in locals() else "N/A"
                     m2.metric(f"평균 {years}년 수익률", avg_r)
                     m3.metric("최대 낙폭 (MDD)", f"{(mdd*100):.2f}%")
