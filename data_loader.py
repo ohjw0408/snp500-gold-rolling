@@ -52,12 +52,14 @@ PROSPECTUS_DB = {
 }
 
 def load_monthly_returns(tickers, interval="1mo"):
-    # 0. 환율 데이터 로드 및 정규화
+    # 0. 환율 데이터 로드 및 전처리
     fx_obj = yf.download("USDKRW=X", start="1980-01-01", interval=interval, progress=False, auto_adjust=True)
     fx_price = fx_obj['Close']
     if interval == "1mo":
         fx_price.index = fx_price.index.to_period('M').to_timestamp('M')
     fx_price = fx_price[~fx_price.index.duplicated(keep='last')]
+    # 환율은 빈 날짜를 이전 값으로 메꿈 (주말/공휴일 대응)
+    fx_price = fx_price.ffill()
     fx_ret = fx_price.pct_change().fillna(0)
 
     all_data = []
@@ -70,9 +72,12 @@ def load_monthly_returns(tickers, interval="1mo"):
             if interval == "1mo":
                 asset_price.index = asset_price.index.to_period('M').to_timestamp('M')
             asset_price = asset_price[~asset_price.index.duplicated(keep='last')]
+            
+            # [보정] 자산 가격 결측치 처리 후 수익률 계산
+            asset_price = asset_price.ffill()
             asset_raw_ret = asset_price.pct_change()
 
-            # 스마트 백필링
+            # 백필링 로직
             is_unhedged = True
             if ticker in PROSPECTUS_DB:
                 info = PROSPECTUS_DB[ticker]
@@ -82,18 +87,20 @@ def load_monthly_returns(tickers, interval="1mo"):
                     bench_price = bench_obj['Close'][bench_ticker] if isinstance(bench_obj['Close'], pd.DataFrame) else bench_obj['Close']
                     if interval == "1mo":
                         bench_price.index = bench_price.index.to_period('M').to_timestamp('M')
-                    bench_price = bench_price[~bench_price.index.duplicated(keep='last')]
+                    bench_price = bench_price[~bench_price.index.duplicated(keep='last')].ffill()
                     bench_raw_ret = bench_price.pct_change()
+                    
                     first_date = asset_raw_ret.first_valid_index()
                     if first_date:
                         bench_before = bench_raw_ret[bench_raw_ret.index < first_date]
                         asset_raw_ret = pd.concat([bench_before, asset_raw_ret])
                         asset_raw_ret = asset_raw_ret[~asset_raw_ret.index.duplicated(keep='last')]
 
-            # 원화 수익률 합성 (오류 방지를 위해 병합 전 중복 체크 강화)
+            # [핵심 수정] 원화 수익률 합성 시 날짜 맞춤
             if is_unhedged:
-                combined = pd.merge(asset_raw_ret, fx_ret, left_index=True, right_index=True, how='inner')
-                asset_final_ret = (1 + combined.iloc[:, 0]) * (1 + combined.iloc[:, 1]) - 1
+                # 환율 데이터를 자산 날짜에 맞게 재정렬(reindex)하고 빈칸을 메꿈
+                target_fx_ret = fx_ret.reindex(asset_raw_ret.index).fillna(0)
+                asset_final_ret = (1 + asset_raw_ret) * (1 + target_fx_ret) - 1
             else:
                 asset_final_ret = asset_raw_ret
             
@@ -102,4 +109,7 @@ def load_monthly_returns(tickers, interval="1mo"):
         except: continue
     
     if not all_data: return pd.DataFrame()
-    return pd.concat(all_data, axis=1).fillna(0)
+    
+    # 모든 자산의 날짜를 통합하고 빈 수익률은 0으로 채움
+    df = pd.concat(all_data, axis=1).fillna(0)
+    return df
