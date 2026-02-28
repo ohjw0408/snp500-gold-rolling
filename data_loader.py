@@ -1,8 +1,7 @@
 import yfinance as yf
 import pandas as pd
 
-# 1. 지수 매핑 DB (한국 및 글로벌 핵심 지수)
-# 1. 한국 및 글로벌 지수 매핑 DB (레버리지 및 배당주 보강)
+# 1. 마스터 DB (사용자 설정 유지)
 PROSPECTUS_DB = {
     "SPY": {"bench": "^GSPC", "unhedged": True}, 
     "IVV": {"bench": "^GSPC", "unhedged": True},
@@ -39,59 +38,62 @@ PROSPECTUS_DB = {
     "BTC-USD": {"bench": "BTC-USD", "unhedged": True}
 }
 
-# [핵심] interval 인자를 받을 수 있도록 함수 정의를 수정했습니다.
 def load_monthly_returns(tickers, interval="1mo"):
     all_data = []
     
+    # [수정] 환율 데이터 미리 로드 (환노출 계산용)
+    fx = yf.download("USDKRW=X", start="1980-01-01", interval=interval, progress=False, auto_adjust=True)['Close']
+    if interval == "1mo":
+        fx.index = fx.index.to_period('M').to_timestamp('M')
+    fx_ret = fx[~fx.index.duplicated(keep='last')].pct_change().fillna(0)
+
     for ticker in tickers:
         try:
-            # 1. 원본 데이터 로드
             asset_obj = yf.download(ticker, start="1980-01-01", interval=interval, progress=False, auto_adjust=True)
             if asset_obj.empty: continue
             
-            # 멀티인덱스 여부에 따라 가격 추출
             asset_price = asset_obj['Close'][ticker] if isinstance(asset_obj['Close'], pd.DataFrame) else asset_obj['Close']
-            
-            # 날짜 정규화 (월간 모드일 때만 말일로 통일)
             if interval == "1mo":
                 asset_price.index = asset_price.index.to_period('M').to_timestamp('M')
             
             asset_price = asset_price[~asset_price.index.duplicated(keep='last')]
-            asset_raw = asset_price.pct_change()
+            asset_raw = asset_price.pct_change().fillna(0)
 
-            # 2. 스마트 백필링
+            # [수정] 딕셔너리 구조에서 bench 티커 추출
+            is_unhedged = True
             if ticker in PROSPECTUS_DB:
-                bench_ticker = PROSPECTUS_DB[ticker]
-                bench_obj = yf.download(bench_ticker, start="1980-01-01", interval=interval, progress=False, auto_adjust=True)
+                info = PROSPECTUS_DB[ticker]
+                bench_ticker = info["bench"] # 딕셔너리에서 값 추출
+                is_unhedged = info["unhedged"]
                 
+                bench_obj = yf.download(bench_ticker, start="1980-01-01", interval=interval, progress=False, auto_adjust=True)
                 if not bench_obj.empty:
                     bench_price = bench_obj['Close'][bench_ticker] if isinstance(bench_obj['Close'], pd.DataFrame) else bench_obj['Close']
                     if interval == "1mo":
                         bench_price.index = bench_price.index.to_period('M').to_timestamp('M')
                     
                     bench_price = bench_price[~bench_price.index.duplicated(keep='last')]
-                    bench_raw = bench_price.pct_change()
+                    bench_raw = bench_price.pct_change().fillna(0)
                     
                     first_date = asset_raw.first_valid_index()
                     if first_date:
                         bench_before = bench_raw[bench_raw.index < first_date]
                         asset_raw = pd.concat([bench_before, asset_raw])
                         asset_raw = asset_raw[~asset_raw.index.duplicated(keep='last')]
+
+            # [추가] 환노출 반영 (원화 수익률 계산)
+            if is_unhedged:
+                # 환율 데이터를 자산 날짜에 맞춤
+                target_fx = fx_ret.reindex(asset_raw.index).ffill().fillna(0)
+                asset_raw = (1 + asset_raw) * (1 + target_fx) - 1
             
             asset_raw.name = ticker
             all_data.append(asset_raw)
             
-        except Exception as e:
-            continue
+        except: continue
     
     if not all_data: return pd.DataFrame()
     
-    # 데이터 병합
-    df = pd.concat(all_data, axis=1)
-    
-    if interval == "1d":
-        df = df.fillna(0) # 일간 데이터 빈 날짜 처리
-    else:
-        df = df.dropna(how='all').fillna(0)
-        
-    return df
+    # 최종 병합
+    df = pd.concat(all_data, axis=1).fillna(0)
+    return df[~df.index.duplicated(keep='last')]
