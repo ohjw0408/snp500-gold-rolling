@@ -11,33 +11,36 @@ def load_monthly_returns(tickers):
 
     for ticker in tickers:
         try:
-            # 데이터를 다운로드합니다.
+            # auto_adjust=True로 배당 포함 수익률 반영
             raw = yf.download(ticker, start=START_DATE, auto_adjust=True)
 
             if raw.empty:
                 continue
 
-            # 🛠 어떤 구조로 데이터가 오든 'Close' 컬럼만 안전하게 추출합니다.
+            # 구조에 상관없이 'Close' 컬럼 추출
             if 'Close' in raw.columns:
-                # 데이터가 1차원인지 2차원인지 확인하여 처리
                 temp_close = raw['Close']
                 if isinstance(temp_close, pd.DataFrame):
-                    # 멀티인덱스인 경우 해당 티커 컬럼 선택
                     price = temp_close[ticker]
                 else:
                     price = temp_close
                 
                 data[ticker] = price
         except Exception as e:
-            st.error(f"{ticker} 데이터를 가져오는 중 오류 발생: {e}")
+            print(f"{ticker} 에러: {e}")
 
     if not data:
         return pd.DataFrame()
 
+    # 모든 자산을 하나의 표로 합침
     df = pd.concat(data.values(), axis=1)
     df.columns = data.keys()
     
-    # 모든 자산의 데이터가 공통으로 존재하는 기간만 남김
+    # 🔥 핵심 수정: 비트코인(주말 거래)과 주식(평일 거래)의 날짜 차이 해결
+    # 1. 주말/공휴일 등 비어있는 칸을 직전 영업일 가격으로 채움 (전진 채우기)
+    df = df.ffill()
+    
+    # 2. 모든 자산이 상장되어 '함께' 존재하기 시작한 시점부터만 남김
     df = df.dropna()
 
     if df.empty:
