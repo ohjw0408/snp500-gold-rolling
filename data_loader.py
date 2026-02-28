@@ -52,56 +52,35 @@ PROSPECTUS_DB = {
 }
 
 def load_monthly_returns(tickers, interval="1mo"):
-    # 0. 환율 데이터 로드 (시작 날짜를 1900년으로 수정)
+    # 환율 데이터 (시작일을 1900년으로 확장)
     fx_obj = yf.download("USDKRW=X", start="1900-01-01", interval=interval, progress=False, auto_adjust=True)
     fx_price = fx_obj['Close']
     
     if interval == "1mo":
         fx_price.index = fx_price.index.to_period('M').to_timestamp('M')
     
-    # 중복 제거 및 수익률 변환
+    # [중요] 중복 제거 및 수익률 변환
     fx_price = fx_price[~fx_price.index.duplicated(keep='last')].ffill()
     fx_ret = fx_price.pct_change().fillna(0)
 
     all_data = []
     for ticker in tickers:
         try:
-            # 자산 데이터 로드 (시작 날짜를 1900년으로 수정)
             asset_obj = yf.download(ticker, start="1900-01-01", interval=interval, progress=False, auto_adjust=True)
             if asset_obj.empty: continue
             
             asset_price = asset_obj['Close'][ticker] if isinstance(asset_obj['Close'], pd.DataFrame) else asset_obj['Close']
-            
             if interval == "1mo":
                 asset_price.index = asset_price.index.to_period('M').to_timestamp('M')
             
+            # 자산 데이터 중복 제거 및 수익률 변환
             asset_price = asset_price[~asset_price.index.duplicated(keep='last')].ffill()
             asset_raw_ret = asset_price.pct_change().fillna(0)
-
-            # 벤치마크 백필링 (시작 날짜 1900년 적용)
-            if ticker in PROSPECTUS_DB:
-                info = PROSPECTUS_DB[ticker]
-                bench_ticker = info["bench"]
-                is_unhedged = info["unhedged"]
-                
-                bench_obj = yf.download(bench_ticker, start="1900-01-01", interval=interval, progress=False, auto_adjust=True)
-                if not bench_obj.empty:
-                    bench_price = bench_obj['Close'][bench_ticker] if isinstance(bench_obj['Close'], pd.DataFrame) else bench_obj['Close']
-                    if interval == "1mo": 
-                        bench_price.index = bench_price.index.to_period('M').to_timestamp('M')
-                    
-                    bench_price = bench_price[~bench_price.index.duplicated(keep='last')].ffill()
-                    bench_raw_ret = bench_price.pct_change().fillna(0)
-                    
-                    first_date = asset_raw_ret.first_valid_index()
-                    if first_date:
-                        bench_before = bench_raw_ret[bench_raw_ret.index < first_date]
-                        asset_raw_ret = pd.concat([bench_before, asset_raw_ret])
-                        asset_raw_ret = asset_raw_ret[~asset_raw_ret.index.duplicated(keep='last')]
 
             # 원화 수익률 합성
             is_unhedged = PROSPECTUS_DB.get(ticker, {}).get("unhedged", True)
             if is_unhedged:
+                # 환율 수익률의 중복을 한 번 더 제거 후 매칭
                 clean_fx_ret = fx_ret[~fx_ret.index.duplicated(keep='last')]
                 target_fx_ret = clean_fx_ret.reindex(asset_raw_ret.index).ffill().fillna(0)
                 asset_final_ret = (1 + asset_raw_ret) * (1 + target_fx_ret) - 1
@@ -113,42 +92,48 @@ def load_monthly_returns(tickers, interval="1mo"):
         except: continue
     
     if not all_data: return pd.DataFrame()
-    return pd.concat(all_data, axis=1).fillna(0)
-🛠️ 2. portfolio.py 수정 (수치 안정화)
-데이터가 없는 구간이 0으로 처리되어 자산 가치가 소멸하는 것을 방지하는 안전장치를 강화했습니다.
+    
+    # 최종 병합 전 중복 제거
+    df = pd.concat(all_data, axis=1).fillna(0)
+    return df[~df.index.duplicated(keep='last')]
+3. 수정된 portfolio.py
+자산 가치가 0 이하로 떨어져 로그 차트가 깨지는 것을 방지하기 위해 최소 가치 안전장치를 추가했습니다.
 
 Python
 import pandas as pd
 import numpy as np
 
 def backtest(returns, weights, rebalance_option="Monthly"):
-    # 수익률 데이터 클리닝 및 하한선 제한
+    # 1. 비정상 수익률 제한 (자산 가치 소멸 방지)
     returns = returns.fillna(0).clip(lower=-0.99)
     
     w = pd.Series(weights)
     portfolio_values = []
-    current_val = 1.0 
+    current_val = 1.0 # 초기 가치
     current_weights = w.copy()
     
     for date, monthly_ret in returns.iterrows():
-        # 수익률이 모두 0인 구간(데이터 시작 전)은 가치를 유지
-        if monthly_ret.sum() == 0 and current_val == 1.0:
+        # 데이터가 아직 시작되지 않은 구간은 무시
+        if (current_val == 1.0) and (monthly_ret.sum() == 0):
             portfolio_values.append(current_val)
             continue
 
+        # 자산별 수익 반영
         asset_values = current_weights * (1 + monthly_ret)
         port_ret = asset_values.sum()
         
-        # 가치 업데이트 (0이 되지 않도록 최소값 유지)
-        current_val = max(current_val * port_ret, 1e-6)
+        # 가치 업데이트 (0원 방지 안전장치)
+        current_val = max(current_val * port_ret, 1e-10)
         portfolio_values.append(current_val)
         
-        # 리밸런싱
+        # 리밸런싱 로직
         if rebalance_option == "Monthly":
             current_weights = w.copy()
         elif rebalance_option == "Yearly" and date.month == 12:
             current_weights = w.copy()
         else:
-            current_weights = asset_values / port_ret if port_ret > 0 else current_weights
+            # 리밸런싱 안 할 때는 변화된 가치 비중 유지
+            if port_ret > 0:
+                current_weights = asset_values / port_ret
             
     return pd.Series(portfolio_values, index=returns.index)
