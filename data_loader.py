@@ -52,66 +52,48 @@ PROSPECTUS_DB = {
 }
 
 def load_monthly_returns(tickers, interval="1mo"):
-    # 0. 환율 데이터 로드 (1900년 시작)
-    fx_obj = yf.download("USDKRW=X", start="1900-01-01", interval=interval, progress=False, auto_adjust=True)
-    fx_price = fx_obj['Close']
-    if interval == "1mo":
-        fx_price.index = fx_price.index.to_period('M').to_timestamp('M')
-    
-    # [방어] 중복 제거 및 수익률 변환
-    fx_price = fx_price[~fx_price.index.duplicated(keep='last')].ffill()
-    fx_ret = fx_price.pct_change().fillna(0)
-
     all_data = []
     for ticker in tickers:
         try:
-            # 자산 데이터 로드 (1900년 시작)
+            # 시작 날짜를 1900-01-01로 변경
             asset_obj = yf.download(ticker, start="1900-01-01", interval=interval, progress=False, auto_adjust=True)
             if asset_obj.empty: continue
             
             asset_price = asset_obj['Close'][ticker] if isinstance(asset_obj['Close'], pd.DataFrame) else asset_obj['Close']
+            
             if interval == "1mo":
                 asset_price.index = asset_price.index.to_period('M').to_timestamp('M')
             
-            # [방어] 자산 데이터 중복 제거
-            asset_price = asset_price[~asset_price.index.duplicated(keep='last')].ffill()
-            asset_raw_ret = asset_price.pct_change().fillna(0)
+            asset_price = asset_price[~asset_price.index.duplicated(keep='last')]
+            asset_raw = asset_price.pct_change()
 
-            # 벤치마크 백필링 (1900년 시작)
+            # 스마트 백필링 로직 (오리지널 유지)
             if ticker in PROSPECTUS_DB:
-                info = PROSPECTUS_DB[ticker]
-                bench_ticker, is_unhedged = info["bench"], info["unhedged"]
-                
+                bench_ticker = PROSPECTUS_DB[ticker]
                 bench_obj = yf.download(bench_ticker, start="1900-01-01", interval=interval, progress=False, auto_adjust=True)
+                
                 if not bench_obj.empty:
                     bench_price = bench_obj['Close'][bench_ticker] if isinstance(bench_obj['Close'], pd.DataFrame) else bench_obj['Close']
-                    if interval == "1mo": bench_price.index = bench_price.index.to_period('M').to_timestamp('M')
+                    if interval == "1mo":
+                        bench_price.index = bench_price.index.to_period('M').to_timestamp('M')
                     
-                    bench_price = bench_price[~bench_price.index.duplicated(keep='last')].ffill()
-                    bench_raw_ret = bench_price.pct_change().fillna(0)
+                    bench_price = bench_price[~bench_price.index.duplicated(keep='last')]
+                    bench_raw = bench_price.pct_change()
                     
-                    first_date = asset_raw_ret.first_valid_index()
+                    first_date = asset_raw.first_valid_index()
                     if first_date:
-                        bench_before = bench_raw_ret[bench_raw_ret.index < first_date]
-                        asset_raw_ret = pd.concat([bench_before, asset_raw_ret])
-                        # [방어] 병합 후 중복 즉시 제거
-                        asset_raw_ret = asset_raw_ret[~asset_raw_ret.index.duplicated(keep='last')]
-
-            # [핵심] 원화 수익률 합성
-            if is_unhedged:
-                # 환율 데이터의 중복을 다시 한번 밀어버리고 재인덱싱
-                clean_fx = fx_ret[~fx_ret.index.duplicated(keep='last')]
-                target_fx = clean_fx.reindex(asset_raw_ret.index).ffill().fillna(0)
-                asset_final_ret = (1 + asset_raw_ret) * (1 + target_fx) - 1
-            else:
-                asset_final_ret = asset_raw_ret
+                        bench_before = bench_raw[bench_raw.index < first_date]
+                        asset_raw = pd.concat([bench_before, asset_raw])
+                        asset_raw = asset_raw[~asset_raw.index.duplicated(keep='last')]
             
-            asset_final_ret.name = ticker
-            all_data.append(asset_final_ret)
-        except: continue
+            asset_raw.name = ticker
+            all_data.append(asset_raw)
+            
+        except Exception as e:
+            continue
     
     if not all_data: return pd.DataFrame()
     
-    # 최종 결과물 병합 시에도 중복 검사
-    combined_df = pd.concat(all_data, axis=1).fillna(0)
-    return combined_df[~combined_df.index.duplicated(keep='last')]
+    # 데이터 병합
+    df = pd.concat(all_data, axis=1)
+    return df.fillna(0)
