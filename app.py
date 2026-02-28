@@ -33,10 +33,23 @@ with st.sidebar:
         st.warning(f"합계: {int(total_w*100)}% (100%로 맞춰주세요)")
 
     st.header("3. 분석 및 기간 설정")
-    # [신규] 날짜 범위 선택 위젯
-    # 기본값으로 1990년부터 오늘까지 설정
-    start_date = st.date_input("시작 날짜", datetime(1990, 1, 1))
-    end_date = st.date_input("종료 날짜", datetime.now())
+    
+    # [수정] 제한을 완전히 풀었습니다. (1900년 ~ 2026년 전체 허용)
+    # 시작 날짜: 1900년부터 선택 가능
+    start_date = st.date_input(
+        "시작 날짜",
+        value=datetime(1990, 1, 1),
+        min_value=datetime(1900, 1, 1),
+        max_value=datetime(2026, 12, 31)
+    )
+    
+    # 종료 날짜: 2026년까지 선택 가능
+    end_date = st.date_input(
+        "종료 날짜",
+        value=datetime(2026, 2, 28), # 오늘 날짜 기준
+        min_value=datetime(1900, 1, 1),
+        max_value=datetime(2026, 12, 31)
+    )
     
     years = st.slider("롤링 기간 (년)", 1, 20, 5)
     rebalance_option = st.selectbox("리밸런싱 주기", ["Monthly", "Yearly"])
@@ -49,19 +62,16 @@ if abs(total_w - 1.0) < 0.001 and tickers:
         st.error("종료 날짜는 시작 날짜보다 나중이어야 합니다.")
     else:
         with st.spinner('데이터 분석 중...'):
-            # 모든 데이터를 일단 불러온 뒤
             returns = load_monthly_returns(tickers)
             
             if not returns.empty:
-                # [신규] 사용자가 지정한 기간으로 데이터 자르기 (Slicing)
-                # returns의 인덱스는 DatetimeIndex이므로 문자열로 조회가 가능합니다.
+                # 사용자가 지정한 기간으로 데이터 자르기
                 mask = (returns.index >= pd.Timestamp(start_date)) & (returns.index <= pd.Timestamp(end_date))
                 filtered_returns = returns.loc[mask]
                 
                 if filtered_returns.empty:
-                    st.warning("선택한 기간에 해당하는 데이터가 없습니다. 날짜를 조정해 주세요.")
+                    st.warning("선택한 기간에 데이터가 없습니다. 자산 상장일 이후의 날짜를 선택해 주세요.")
                 else:
-                    # 필터링된 데이터로 백테스트 진행
                     portfolio = backtest(filtered_returns, weights, rebalance_option)
                     mdd = calculate_mdd(portfolio)
 
@@ -79,10 +89,10 @@ if abs(total_w - 1.0) < 0.001 and tickers:
                             rolling_cagr.plot(ax=ax2, color='orange')
                             st.pyplot(fig2)
                         else:
-                            st.info("선택한 기간이 설정한 롤링 기간보다 짧습니다.")
+                            st.info("기간이 너무 짧아 롤링 수익률을 계산할 수 없습니다.")
 
                     st.divider()
-                    st.subheader("🔢 해당 기간 성과 요약")
+                    st.subheader("🔢 성과 요약")
                     m1, m2, m3 = st.columns(3)
                     m1.metric("최종 가치", f"${(portfolio.iloc[-1]*1000):,.2f}")
                     m2.metric("평균 롤링 수익률", f"{(rolling_cagr.mean()*100):.2f}%" if 'rolling_cagr' in locals() else "N/A")
