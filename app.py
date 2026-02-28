@@ -34,21 +34,22 @@ with st.sidebar:
 
     st.header("3. 분석 및 기간 설정")
     
-    # [수정] 제한을 완전히 풀었습니다. (1900년 ~ 2026년 전체 허용)
-    # 시작 날짜: 1900년부터 선택 가능
+st.header("3. 분석 및 기간 설정")
+    
+    # 시작 날짜: 1900년부터 현재까지 선택할 수 있도록 범위를 대폭 확장
     start_date = st.date_input(
         "시작 날짜",
-        value=datetime(1990, 1, 1),
-        min_value=datetime(1900, 1, 1),
-        max_value=datetime(2026, 12, 31)
+        value=datetime(2010, 1, 1),
+        min_value=datetime(1900, 1, 1), # 1900년까지 내려갈 수 있음
+        max_value=datetime.now()         # 오늘 날짜까지 선택 가능
     )
     
-    # 종료 날짜: 2026년까지 선택 가능
+    # 종료 날짜: 1900년부터 2026년까지 선택 가능
     end_date = st.date_input(
         "종료 날짜",
-        value=datetime(2026, 2, 28), # 오늘 날짜 기준
+        value=datetime.now(),
         min_value=datetime(1900, 1, 1),
-        max_value=datetime(2026, 12, 31)
+        max_value=datetime.now() # 2026년 말까지 선택 가능
     )
     
     years = st.slider("롤링 기간 (년)", 1, 20, 5)
