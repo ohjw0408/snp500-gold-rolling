@@ -13,7 +13,11 @@ st.title("🚀 내 맘대로 자산배분 테스터")
 # -------------------
 with st.sidebar:
     st.header("1. 자산 설정")
-    ticker_input = st.text_input("티커 입력 (쉼표로 구분)", "SPY, TLT, GLD, BTC-USD")
+    ticker_input = st.text_input(
+        "티커 입력 (쉼표로 구분)", 
+        "^GSPC, ^IXIC, GC=F, BTC-USD",
+        help="지수 데이터를 보려면 ^GSPC(S&P500), ^IXIC(나스닥) 등을 입력하세요."
+    )
     tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
 
     st.header("2. 비중 설정")
