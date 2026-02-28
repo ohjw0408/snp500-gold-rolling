@@ -23,10 +23,10 @@ st.header("2. 비중 설정")
     
     # 세션 상태 초기화 (기존과 동일)
 if 'prev_tickers' not in st.session_state or st.session_state.prev_tickers != tickers:
-        st.session_state.prev_tickers = tickers
-        n = len(tickers)
-        for t in tickers:
-            st.session_state[f"w_{t}"] = 100 // n if n > 0 else 0
+    st.session_state.prev_tickers = tickers
+    n = len(tickers)
+    for t in tickers:
+        st.session_state[f"w_{t}"] = 100 // n if n > 0 else 0
 
     # 비중 자동 조절 함수
     def on_weight_change(changed_ticker):
