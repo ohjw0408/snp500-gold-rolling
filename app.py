@@ -91,4 +91,16 @@ if total_w == 100 and tickers:
             else:
                 rolling_cagr = calculate_cagr(portfolio, years)
                 fig, ax = plt.subplots()
-                rolling_cagr.plot(ax
+                rolling_cagr.plot(ax=ax, color='orange')
+                st.pyplot(fig)
+
+        st.divider()
+        st.subheader("🔢 핵심 성과 지표")
+        v1, v2, v3 = st.columns(3)
+        v1.metric("최종 가치", f"${(portfolio.iloc[-1]*1000):,.2f}")
+        v2.metric("평균 롤링 수익률", f"{(rolling_cagr.mean()*100):.2f}%" if rolling_cagr is not None else "N/A")
+        v3.metric("최대 낙폭 (MDD)", f"{(mdd*100):.2f}%")
+    else:
+        st.warning("데이터를 가져오지 못했습니다. 티커를 확인해주세요.")
+else:
+    st.info("왼쪽에서 티커를 입력하고 비중 합계를 100%로 맞춰주세요.")
