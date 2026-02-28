@@ -32,23 +32,22 @@ PROSPECTUS_DB = {
     "GLD": "GC=F", "IAU": "GC=F", "SLV": "SI=F"
 }
 
+
 def load_monthly_returns(tickers):
     all_data = []
     
     for ticker in tickers:
         try:
-            # 1. 원본 데이터 로드 (월간 단위)
-            # 한국 종목의 경우 티커 끝에 .KS(코스피) 또는 .KQ(코스닥)가 붙어야 합니다.
+            # 1. 데이터 로드
             asset_obj = yf.download(ticker, start="1980-01-01", interval="1mo", progress=False, auto_adjust=True)
             if asset_obj.empty: continue
             
-            # 멀티인덱스 여부에 따라 데이터 추출
-            if 'Close' in asset_obj.columns:
-                asset_price = asset_obj['Close']
-                if isinstance(asset_price, pd.DataFrame):
-                    asset_price = asset_price[ticker]
-            else:
-                continue
+            # 컬럼 추출 (멀티인덱스 대응)
+            asset_price = asset_obj['Close'][ticker] if isinstance(asset_obj['Close'], pd.DataFrame) else asset_obj['Close']
+            
+            # [수정 핵심] 날짜 인덱스를 해당 월의 마지막 날로 통일하고 중복 제거
+            asset_price.index = asset_price.index.to_period('M').to_timestamp('M')
+            asset_price = asset_price[~asset_price.index.duplicated(keep='last')]
             
             asset_raw = asset_price.pct_change()
 
@@ -57,28 +56,30 @@ def load_monthly_returns(tickers):
                 bench_ticker = PROSPECTUS_DB[ticker]
                 bench_obj = yf.download(bench_ticker, start="1980-01-01", interval="1mo", progress=False, auto_adjust=True)
                 
-                if not bench_obj.empty and 'Close' in bench_obj.columns:
-                    bench_price = bench_obj['Close']
-                    if isinstance(bench_price, pd.DataFrame):
-                        bench_price = bench_price[bench_ticker]
-                        
+                if not bench_obj.empty:
+                    bench_price = bench_obj['Close'][bench_ticker] if isinstance(bench_obj['Close'], pd.DataFrame) else bench_obj['Close']
+                    # 지수 날짜도 동일하게 통일
+                    bench_price.index = bench_price.index.to_period('M').to_timestamp('M')
+                    bench_price = bench_price[~bench_price.index.duplicated(keep='last')]
+                    
                     bench_raw = bench_price.pct_change()
                     
-                    # ETF 상장 전 구간을 지수 데이터로 메꿈
                     first_date = asset_raw.first_valid_index()
                     if first_date:
                         bench_before = bench_raw[bench_raw.index < first_date]
                         asset_raw = pd.concat([bench_before, asset_raw])
+                        # 합친 후 다시 한번 날짜 정리
+                        asset_raw = asset_raw[~asset_raw.index.duplicated(keep='last')]
             
             asset_raw.name = ticker
             all_data.append(asset_raw)
             
         except Exception as e:
-            print(f"{ticker} 처리 중 오류: {e}")
+            print(f"{ticker} 에러: {e}")
             continue
     
     if not all_data: return pd.DataFrame()
     
-    # 데이터 병합 및 정리
+    # 3. 데이터 병합 (모든 자산의 날짜를 맞춤)
     df = pd.concat(all_data, axis=1)
     return df.dropna(how='all').fillna(0)
