@@ -33,53 +33,62 @@ PROSPECTUS_DB = {
 }
 
 
-def load_monthly_returns(tickers):
+def load_monthly_returns(tickers, interval="1mo"):
     all_data = []
     
     for ticker in tickers:
         try:
-            # 1. 데이터 로드
-            asset_obj = yf.download(ticker, start="1980-01-01", interval="1mo", progress=False, auto_adjust=True)
+            # 1. 데이터 로드 (interval 반영)
+            asset_obj = yf.download(ticker, start="1980-01-01", interval=interval, progress=False, auto_adjust=True)
             if asset_obj.empty: continue
             
-            # 컬럼 추출 (멀티인덱스 대응)
+            # 가격 추출
             asset_price = asset_obj['Close'][ticker] if isinstance(asset_obj['Close'], pd.DataFrame) else asset_obj['Close']
             
-            # [수정 핵심] 날짜 인덱스를 해당 월의 마지막 날로 통일하고 중복 제거
-            asset_price.index = asset_price.index.to_period('M').to_timestamp('M')
-            asset_price = asset_price[~asset_price.index.duplicated(keep='last')]
+            # [날짜 처리]
+            if interval == "1mo":
+                # 월간일 때는 말일로 통일 (글로벌 지수 정렬용)
+                asset_price.index = asset_price.index.to_period('M').to_timestamp('M')
             
+            # 중복 날짜 제거
+            asset_price = asset_price[~asset_price.index.duplicated(keep='last')]
             asset_raw = asset_price.pct_change()
 
             # 2. 스마트 백필링
             if ticker in PROSPECTUS_DB:
                 bench_ticker = PROSPECTUS_DB[ticker]
-                bench_obj = yf.download(bench_ticker, start="1980-01-01", interval="1mo", progress=False, auto_adjust=True)
+                bench_obj = yf.download(bench_ticker, start="1980-01-01", interval=interval, progress=False, auto_adjust=True)
                 
                 if not bench_obj.empty:
                     bench_price = bench_obj['Close'][bench_ticker] if isinstance(bench_obj['Close'], pd.DataFrame) else bench_obj['Close']
-                    # 지수 날짜도 동일하게 통일
-                    bench_price.index = bench_price.index.to_period('M').to_timestamp('M')
-                    bench_price = bench_price[~bench_price.index.duplicated(keep='last')]
                     
+                    if interval == "1mo":
+                        bench_price.index = bench_price.index.to_period('M').to_timestamp('M')
+                        
+                    bench_price = bench_price[~bench_price.index.duplicated(keep='last')]
                     bench_raw = bench_price.pct_change()
                     
                     first_date = asset_raw.first_valid_index()
                     if first_date:
                         bench_before = bench_raw[bench_raw.index < first_date]
                         asset_raw = pd.concat([bench_before, asset_raw])
-                        # 합친 후 다시 한번 날짜 정리
                         asset_raw = asset_raw[~asset_raw.index.duplicated(keep='last')]
             
             asset_raw.name = ticker
             all_data.append(asset_raw)
             
         except Exception as e:
-            print(f"{ticker} 에러: {e}")
             continue
     
     if not all_data: return pd.DataFrame()
     
-    # 3. 데이터 병합 (모든 자산의 날짜를 맞춤)
+    # 3. 데이터 병합 (모든 자산 정렬)
     df = pd.concat(all_data, axis=1)
-    return df.dropna(how='all').fillna(0)
+    
+    # 일간 데이터일 경우 빈 날짜(휴장일 등)는 ffill로 메꿔서 계산 오류 방지
+    if interval == "1d":
+        df = df.fillna(0) # 수익률이므로 빈 날은 0%
+    else:
+        df = df.dropna(how='all').fillna(0)
+        
+    return df
