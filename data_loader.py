@@ -4,7 +4,7 @@ import pandas as pd
 START_DATE = "1970-01-01"
 
 ASSETS = {
-    "SP500": "^SP500TR",   # S&P500 Total Return Index
+    "SP500": "^SPY",   # S&P500 Total Return Index
     "Gold": "GLD"          # SPDR Gold ETF (현물 기반)
 }
 
