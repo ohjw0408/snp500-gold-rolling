@@ -2,7 +2,7 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import pandas as pd
 from datetime import datetime
-from data_loader import load_monthly_returns
+from data_loader import load_monthly_returns # 이 함수가 interval 인자를 받도록 수정됨
 from portfolio import backtest
 from metrics import calculate_cagr, calculate_mdd
 
@@ -11,11 +11,11 @@ st.set_page_config(page_title="Custom Asset Analyzer", layout="wide")
 st.title("🚀 내 맘대로 자산배분 테스터")
 
 # -------------------
-# 2. 사이드바 설정 (구조 통합)
+# 2. 사이드바 설정
 # -------------------
 with st.sidebar:
     st.header("1. 자산 설정")
-    ticker_input = st.text_input("티커 입력 (쉼표로 구분)", "^GSPC, ^IXIC, GC=F, BTC-USD")
+    ticker_input = st.text_input("티커 입력 (쉼표 구분)", "SPY, QQQ, SCHD, 069500.KS")
     tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
 
     st.header("2. 비중 설정")
@@ -32,23 +32,21 @@ with st.sidebar:
     else:
         st.warning(f"합계: {int(total_w*100)}% (100%로 맞춰주세요)")
 
-    st.header("3. 분석 및 기간 설정")
+    st.header("3. 분석 기간 및 옵션")
+    start_date = st.date_input("시작 날짜", value=datetime(2000, 1, 1))
+    end_date = st.date_input("종료 날짜", value=datetime.now())
     
-    # [수정 핵심] min/max 범위를 1900~2100년으로 넉넉하게 잡았습니다.
-    start_date = st.date_input(
-        "시작 날짜",
-        value=datetime(1990, 1, 1),
-        min_value=datetime(1900, 1, 1),
-        max_value=datetime.now()
+    st.divider()
+    
+    # [추가] 데이터 정밀도 선택 버튼
+    data_mode = st.radio(
+        "데이터 정밀도",
+        ["월간 (빠름/장기)", "일간 (정밀/단기)"],
+        index=0,
+        help="수십 년치 분석은 '월간', 최근 상세 변동은 '일간'을 추천합니다."
     )
-    
-    end_date = st.date_input(
-        "종료 날짜",
-        value=datetime.now(),
-        min_value=datetime(1900, 1, 1),
-        max_value=datetime.now()
-    )
-    
+    interval = "1mo" if "월간" in data_mode else "1d"
+
     years = st.slider("롤링 기간 (년)", 1, 20, 5)
     rebalance_option = st.selectbox("리밸런싱 주기", ["Monthly", "Yearly"])
 
@@ -59,46 +57,45 @@ if abs(total_w - 1.0) < 0.001 and tickers:
     if start_date >= end_date:
         st.error("종료 날짜는 시작 날짜보다 나중이어야 합니다.")
     else:
-        # 데이터 로드 시 날짜를 인자로 넘기지 않고 전체를 가져온 뒤 필터링합니다.
-        with st.spinner('데이터를 실시간으로 분석 중입니다...'):
-            returns = load_monthly_returns(tickers)
+        with st.spinner(f'{data_mode} 데이터를 분석 중입니다...'):
+            # data_loader에서 interval 옵션을 사용하여 데이터를 가져옵니다.
+            returns = load_monthly_returns(tickers, interval=interval)
             
             if not returns.empty:
-                # pandas Timestamp로 변환하여 마스킹
+                # 선택한 날짜로 필터링
                 mask = (returns.index >= pd.Timestamp(start_date)) & (returns.index <= pd.Timestamp(end_date))
                 filtered_returns = returns.loc[mask]
                 
                 if filtered_returns.empty:
-                    st.warning("⚠️ 선택하신 기간에 자산 데이터가 존재하지 않습니다. 날짜를 조정해 주세요.")
+                    st.warning("⚠️ 해당 기간에 데이터가 없습니다. 날짜를 조정해 보세요.")
                 else:
+                    # 백테스트 실행
                     portfolio = backtest(filtered_returns, weights, rebalance_option)
                     mdd = calculate_mdd(portfolio)
 
+                    # 그래프 출력
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.subheader(f"📈 자산 성장 곡선")
-                        st.caption(f"{start_date} ~ {end_date}")
+                        st.subheader("📈 자산 성장 곡선")
                         fig1, ax1 = plt.subplots()
-                        ax1.plot(portfolio * 1000)
+                        ax1.plot(portfolio * 1000) # 1000달러 투자 기준
                         st.pyplot(fig1)
                     with col2:
                         st.subheader(f"📉 {years}년 롤링 수익률")
-                        if len(portfolio) >= years * 12:
+                        if len(portfolio) >= (years * 12 if interval=="1mo" else years * 252):
                             rolling_cagr = calculate_cagr(portfolio, years)
                             fig2, ax2 = plt.subplots()
                             rolling_cagr.plot(ax=ax2, color='orange')
                             st.pyplot(fig2)
                         else:
-                            st.info("데이터 기간이 설정한 롤링 기간보다 짧습니다.")
+                            st.info("선택한 기간이 롤링 기간보다 짧습니다.")
 
                     st.divider()
                     st.subheader("🔢 성과 요약")
                     m1, m2, m3 = st.columns(3)
                     m1.metric("최종 가치", f"${(portfolio.iloc[-1]*1000):,.2f}")
-                    
-                    # 롤링 수익률이 계산된 경우에만 평균 표시
-                    avg_rolling = f"{(rolling_cagr.mean()*100):.2f}%" if 'rolling_cagr' in locals() else "N/A"
-                    m2.metric("평균 롤링 수익률", avg_rolling)
+                    avg_r = f"{(rolling_cagr.mean()*100):.2f}%" if 'rolling_cagr' in locals() else "N/A"
+                    m2.metric("평균 롤링 수익률", avg_r)
                     m3.metric("최대 낙폭 (MDD)", f"{(mdd*100):.2f}%")
             else:
                 st.error("데이터 로드에 실패했습니다. 티커를 확인해 주세요.")
