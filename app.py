@@ -37,13 +37,13 @@ with st.sidebar:
     start_date = st.date_input(
         "시작 날짜", 
         value=datetime(1990, 1, 1),
-        min_value=datetime(1980, 1, 1),
+        min_value=datetime(1900, 1, 1),
         max_value=datetime.now()
     )
     end_date = st.date_input(
         "종료 날짜", 
         value=datetime.now(),
-        min_value=datetime(1980, 1, 1),
+        min_value=datetime(1900, 1, 1),
         max_value=datetime.now()
     )
     
