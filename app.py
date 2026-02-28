@@ -1,22 +1,22 @@
 import streamlit as st
 import matplotlib.pyplot as plt
+import pandas as pd  # 데이터 표를 다루기 위해 추가
 
 from data_loader import load_monthly_returns
 from portfolio import backtest
 from metrics import calculate_cagr, calculate_mdd
 
-st.title("Institutional-Grade Asset Allocation Engine")
+st.set_page_config(page_title="Asset Allocation Analyzer", layout="wide") # 넓게 보기
+st.title("📊 자산배분 엔진 검증 대시보드")
 
 # -------------------
-# 사용자 입력
+# 1. 사용자 입력 (Sidebar로 이동하여 화면을 넓게 사용)
 # -------------------
-
-weight_sp = st.slider("S&P500 비율 (%)", 0, 100, 50)
-years = st.slider("롤링 기간 (년)", 1, 30, 5)
-rebalance_option = st.selectbox(
-    "리밸런싱 주기 선택",
-    ["Monthly", "Yearly"]
-)
+with st.sidebar:
+    st.header("설정")
+    weight_sp = st.slider("S&P500 비율 (%)", 0, 100, 50)
+    years = st.slider("롤링 기간 (년)", 1, 30, 5)
+    rebalance_option = st.selectbox("리밸런싱 주기", ["Monthly", "Yearly"])
 
 weights = {
     "SP500": weight_sp / 100,
@@ -24,62 +24,47 @@ weights = {
 }
 
 # -------------------
-# 데이터 로드
+# 2. 데이터 로드 및 연산
 # -------------------
-
 returns = load_monthly_returns()
-
-# -------------------
-# 백테스트 실행
-# -------------------
-
 portfolio = backtest(returns, weights, rebalance_option)
-
 rolling_cagr = calculate_cagr(portfolio, years)
 mdd = calculate_mdd(portfolio)
 
 # -------------------
-# 그래프 출력
+# 3. 시각화 및 데이터 검증 (핵심 추가 부분)
 # -------------------
+col1, col2 = st.columns(2)
 
-fig, ax = plt.subplots()
-rolling_cagr.plot(ax=ax)
-ax.set_title(f"{years}-Year Rolling CAGR")
-st.pyplot(fig)
+with col1:
+    st.subheader("📈 포트폴리오 성장 곡선")
+    fig2, ax2 = plt.subplots()
+    ax2.plot(portfolio * 1000, label="Portfolio")
+    ax2.set_title("Growth of $1,000")
+    st.pyplot(fig2)
 
-fig2, ax2 = plt.subplots()
-ax2.plot(portfolio * 1000)
-ax2.set_title("Portfolio Growth (Start = 1000)")
-st.pyplot(fig2)
+with col2:
+    st.subheader("📉 롤링 수익률 (Rolling CAGR)")
+    fig, ax = plt.subplots()
+    rolling_cagr.plot(ax=ax, color='orange')
+    ax.set_title(f"{years}-Year Rolling CAGR")
+    st.pyplot(fig)
 
-# -------------------
-# 통계
-# -------------------
+st.divider()
 
-st.subheader("통계")
+# --- 여기서부터 숫자를 확인하는 테이블입니다 ---
+st.subheader("🔢 데이터 상세 검증")
 
-st.write("평균 CAGR:", round(rolling_cagr.mean() * 100, 2), "%")
-st.write("최저 CAGR:", round(rolling_cagr.min() * 100, 2), "%")
-st.write("최대 낙폭 (MDD):", round(mdd * 100, 2), "%")
+v_col1, v_col2, v_col3 = st.columns(3)
+v_col1.metric("최종 자산 가치", f"${(portfolio.iloc[-1] * 1000):,.2f}")
+v_col2.metric("평균 롤링 수익률", f"{(rolling_cagr.mean() * 100):.2f}%")
+v_col3.metric("최대 낙폭 (MDD)", f"{(mdd * 100):.2f}%")
 
-# -------------------
-# 데이터 검증용 수치 및 표 출력
-# -------------------
+# 연도별 수익률 표 생성
+st.write("📅 **연도별 수익률 데이터** (엑셀과 대조해보세요)")
+annual_perf = portfolio.resample('Y').last().pct_change()
+st.dataframe(annual_perf.to_frame(name="Annual Return").style.format("{:.2%}"), use_container_width=True)
 
-st.subheader("📊 데이터 검증 센터")
-
-# 1. 주요 지표 요약 (카드 형태)
-col1, col2, col3 = st.columns(3)
-col1.metric("최종 자산 (시작=1000)", f"{round(portfolio.iloc[-1] * 1000, 2)}")
-col2.metric("평균 롤링 CAGR", f"{round(rolling_cagr.mean() * 100, 2)}%")
-col3.metric("최대 낙폭 (MDD)", f"{round(mdd * 100, 2)}%")
-
-# 2. 연도별 수익률 표 (데이터 검증의 핵심)
-st.write("📅 연도별 포트폴리오 성과 (상세 데이터)")
-# 연간 수익률로 계산해서 보여주기
-annual_returns = portfolio.resample('Y').last().pct_change() * 100
-st.dataframe(annual_returns.style.format("{:.2f}%")) 
-
-# 3. 원본 월간 수익률 확인 (데이터 로더가 잘 작동하는지 확인)
-if st.checkbox("원본 월간 데이터(Monthly Returns) 보기"):
+# 원본 데이터 확인용 체크박스
+if st.checkbox("야후 파이낸스에서 가져온 원본 월간 수익률 보기"):
     st.write(returns)
