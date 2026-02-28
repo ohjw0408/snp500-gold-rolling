@@ -55,7 +55,7 @@ def load_monthly_returns(tickers, interval="1mo"):
     all_data = []
     for ticker in tickers:
         try:
-            # 시작 날짜를 1900-01-01로 변경
+            # [수정] 시작 날짜를 1900년으로 변경하여 '락' 해제
             asset_obj = yf.download(ticker, start="1900-01-01", interval=interval, progress=False, auto_adjust=True)
             if asset_obj.empty: continue
             
@@ -67,7 +67,7 @@ def load_monthly_returns(tickers, interval="1mo"):
             asset_price = asset_price[~asset_price.index.duplicated(keep='last')]
             asset_raw = asset_price.pct_change()
 
-            # 스마트 백필링 로직 (오리지널 유지)
+            # 스마트 백필링 로직 (날짜 1900년으로 수정)
             if ticker in PROSPECTUS_DB:
                 bench_ticker = PROSPECTUS_DB[ticker]
                 bench_obj = yf.download(bench_ticker, start="1900-01-01", interval=interval, progress=False, auto_adjust=True)
@@ -94,6 +94,6 @@ def load_monthly_returns(tickers, interval="1mo"):
     
     if not all_data: return pd.DataFrame()
     
-    # 데이터 병합
+    # 데이터 병합 및 결측치 처리
     df = pd.concat(all_data, axis=1)
     return df.fillna(0)
