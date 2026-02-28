@@ -18,53 +18,49 @@ with st.sidebar:
 
     st.header("2. 비중 설정")
     
-    # 세션 상태 초기화
+    # 세션 초기화
     if 'val' not in st.session_state or st.session_state.get('last_tickers') != tickers:
         st.session_state.last_tickers = tickers
         n = len(tickers)
         st.session_state.val = {t: 100 // n for t in tickers} if n > 0 else {}
 
-    def on_change_logic(t, key_type):
-        # 입력된 새 값을 가져옴
-        new_v = st.session_state[f"{key_type}_{t}"]
-        st.session_state.val[t] = new_v
-        
-        # 합계 조절 로직 (나머지 자산에서 차감)
-        others = [ot for ot in tickers if ot != t]
-        if others:
-            rem = 100 - new_v
-            current_other_sum = sum(st.session_state.val[ot] for ot in others)
-            if current_other_sum > 0:
-                for ot in others:
-                    st.session_state.val[ot] = int(rem * (st.session_state.val[ot] / current_other_sum))
-            else:
-                for ot in others:
-                    st.session_state.val[ot] = rem // len(others)
-        
-        # [중요] 강제 새로고침으로 위젯 눈금 동기화
-        st.rerun()
-
+    # 동기화 로직: 사용자가 변경한 값을 세션에 즉시 반영
     weights = {}
+    temp_total = sum(st.session_state.val.values())
+
     for t in tickers:
         st.write(f"**{t}**")
         c1, c2 = st.columns([7, 3])
-        current_v = st.session_state.val.get(t, 0)
         
-        with c1:
-            st.slider(f"S_{t}", 0, 100, current_v, key=f"sli_{t}", on_change=on_change_logic, args=(t, "sli"), label_visibility="collapsed")
-        with c2:
-            st.number_input(f"N_{t}", 0, 100, current_v, key=f"num_{t}", on_change=on_change_logic, args=(t, "num"), label_visibility="collapsed")
+        # 슬라이더와 숫자 입력창이 동일한 세션 값을 공유 (key를 val_{t}로 통일)
+        # 콜백 없이 key만 사용하여 자동 세션 업데이트 유도
+        current_val = st.session_state.val.get(t, 0)
         
-        weights[t] = current_v / 100
+        # 슬라이더
+        new_s = c1.slider(f"S_{t}", 0, 100, current_val, key=f"s_{t}", label_visibility="collapsed")
+        # 숫자창
+        new_n = c2.number_input(f"N_{t}", 0, 100, current_val, key=f"n_{t}", label_visibility="collapsed")
+        
+        # 둘 중 하나라도 바뀌면 세션 업데이트
+        if new_s != current_val:
+            st.session_state.val[t] = new_s
+            st.rerun()
+        elif new_n != current_val:
+            st.session_state.val[t] = new_n
+            st.rerun()
+            
+        weights[t] = st.session_state.val[t] / 100
 
     total_w = sum(st.session_state.val.values())
-    st.markdown(f"### 현재 합계: `{total_w}%`")
     
-    # 100% 보정 버튼
+    # 합계 색상 표시
+    color = "green" if total_w == 100 else "red"
+    st.markdown(f"### 현재 합계: <span style='color:{color}'>{total_w}%</span>", unsafe_allow_html=True)
+    
     if total_w != 100 and len(tickers) > 0:
         if st.button("100% 강제 맞춤"):
-            first_t = tickers[0]
-            st.session_state.val[first_t] += (100 - total_w)
+            diff = 100 - total_w
+            st.session_state.val[tickers[0]] += diff
             st.rerun()
 
     st.header("3. 분석 설정")
@@ -74,15 +70,13 @@ with st.sidebar:
 # -------------------
 # 2. 메인 결과 출력
 # -------------------
-# 99%~101% 사이면 정수 계산 오차로 간주하고 실행 허용 (사용자 편의성)
-if 99 <= total_w <= 101 and tickers:
-    with st.spinner('분석 중...'):
-        # 실제 계산 시에는 합계를 정확히 1.0으로 정규화하여 사용
-        norm_weights = {t: w/sum(weights.values()) for t, w in weights.items()}
+# 정수 오차 감안하여 100%일 때만 실행
+if total_w == 100 and tickers:
+    with st.spinner('역사적 데이터 분석 중...'):
         returns = load_monthly_returns(tickers)
         
         if not returns.empty:
-            portfolio = backtest(returns, norm_weights, rebalance_option)
+            portfolio = backtest(returns, weights, rebalance_option)
             mdd = calculate_mdd(portfolio)
 
             col1, col2 = st.columns(2)
@@ -99,7 +93,7 @@ if 99 <= total_w <= 101 and tickers:
                     rolling_cagr.plot(ax=ax2, color='orange')
                     st.pyplot(fig2)
                 else:
-                    st.warning("데이터 부족")
+                    st.warning("데이터가 부족하여 롤링 수익률을 표시할 수 없습니다.")
 
             st.divider()
             st.subheader("🔢 성과 요약")
@@ -108,4 +102,4 @@ if 99 <= total_w <= 101 and tickers:
             m2.metric("평균 롤링 수익률", f"{(rolling_cagr.mean()*100):.2f}%" if 'rolling_cagr' in locals() else "N/A")
             m3.metric("최대 낙폭 (MDD)", f"{(mdd*100):.2f}%")
 else:
-    st.info("사이드바에서 비중 합계를 100%로 맞춰주세요.")
+    st.info("왼쪽 사이드바에서 비중 합계를 100%로 맞춰주세요.")
