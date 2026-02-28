@@ -52,11 +52,12 @@ PROSPECTUS_DB = {
 }
 
 def load_monthly_returns(tickers, interval="1mo"):
-    # 0. 환율 데이터 로드 및 전처리
+    # 0. 환율 데이터 로드 (자산 통화가 원화가 아닐 때 합성용)
     fx_obj = yf.download("USDKRW=X", start="1980-01-01", interval=interval, progress=False, auto_adjust=True)
     fx_price = fx_obj['Close']
     if interval == "1mo":
         fx_price.index = fx_price.index.to_period('M').to_timestamp('M')
+    # 중복 제거 및 빈 날짜 메우기
     fx_price = fx_price[~fx_price.index.duplicated(keep='last')].ffill()
     fx_ret = fx_price.pct_change().fillna(0)
 
@@ -72,27 +73,28 @@ def load_monthly_returns(tickers, interval="1mo"):
             asset_price = asset_price[~asset_price.index.duplicated(keep='last')].ffill()
             asset_raw_ret = asset_price.pct_change()
 
-            # 백필링 및 환율 합성
+            # 백필링 로직
             is_unhedged = True
             if ticker in PROSPECTUS_DB:
                 info = PROSPECTUS_DB[ticker]
                 bench_ticker, is_unhedged = info["bench"], info["unhedged"]
-                # ... (벤치마크 백필링 로직 동일) ...
+                
                 bench_obj = yf.download(bench_ticker, start="1980-01-01", interval=interval, progress=False, auto_adjust=True)
                 if not bench_obj.empty:
                     bench_price = bench_obj['Close'][bench_ticker] if isinstance(bench_obj['Close'], pd.DataFrame) else bench_obj['Close']
                     if interval == "1mo": bench_price.index = bench_price.index.to_period('M').to_timestamp('M')
                     bench_price = bench_price[~bench_price.index.duplicated(keep='last')].ffill()
                     bench_raw_ret = bench_price.pct_change()
+                    
                     first_date = asset_raw_ret.first_valid_index()
                     if first_date:
                         bench_before = bench_raw_ret[bench_raw_ret.index < first_date]
                         asset_raw_ret = pd.concat([bench_before, asset_raw_ret])
                         asset_raw_ret = asset_raw_ret[~asset_raw_ret.index.duplicated(keep='last')]
 
-            # 원화 수익률 합성 시 날짜 맞춤 보정
+            # [핵심] 원화 수익률 합성 (환율 데이터 날짜를 자산 날짜에 강제 매칭)
             if is_unhedged:
-                target_fx_ret = fx_ret.reindex(asset_raw_ret.index).fillna(0)
+                target_fx_ret = fx_ret.reindex(asset_raw_ret.index).ffill().fillna(0)
                 asset_final_ret = (1 + asset_raw_ret) * (1 + target_fx_ret) - 1
             else:
                 asset_final_ret = asset_raw_ret
