@@ -9,7 +9,7 @@ st.set_page_config(page_title="Custom Asset Analyzer", layout="wide")
 st.title("🚀 내 맘대로 자산배분 테스터")
 
 # -------------------
-# 1. 사이드바 설정 (비중 자동 조절 + 키보드 입력)
+# 1. 사이드바 설정
 # -------------------
 with st.sidebar:
     st.header("1. 자산 설정")
@@ -18,47 +18,63 @@ with st.sidebar:
 
     st.header("2. 비중 설정")
     
-    # 세션 상태 초기화 (티커 변경 시 비중 초기화)
+    # 세션 상태 초기화
     if 'prev_tickers' not in st.session_state or st.session_state.prev_tickers != tickers:
         st.session_state.prev_tickers = tickers
         n = len(tickers)
         for t in tickers:
-            st.session_state[f"w_{t}"] = 100 // n if n > 0 else 0
+            st.session_state[f"val_{t}"] = 100 // n if n > 0 else 0
 
-    # 비중 자동 조절 콜백 함수
-    def on_weight_change(changed_ticker):
-        new_val = st.session_state[f"w_{changed_ticker}"]
+    # 비중 조절 함수 (동기화 로직)
+    def sync_weights(changed_ticker, source):
+        # source에서 바뀐 값을 가져와서 세션에 저장
+        new_val = st.session_state[f"{source}_{changed_ticker}"]
+        st.session_state[f"val_{changed_ticker}"] = new_val
+        
         other_tickers = [t for t in tickers if t != changed_ticker]
         if not other_tickers:
-            st.session_state[f"w_{changed_ticker}"] = 100
+            st.session_state[f"val_{changed_ticker}"] = 100
             return
+
         remaining = 100 - new_val
-        current_other_sum = sum(st.session_state[f"w_{t}"] for t in other_tickers)
+        current_other_sum = sum(st.session_state[f"val_{t}"] for t in other_tickers)
+        
         if current_other_sum > 0:
             for t in other_tickers:
-                ratio = st.session_state[f"w_{t}"] / current_other_sum
-                st.session_state[f"w_{t}"] = int(remaining * ratio)
+                ratio = st.session_state[f"val_{t}"] / current_other_sum
+                st.session_state[f"val_{t}"] = int(remaining * ratio)
         else:
             for t in other_tickers:
-                st.session_state[f"w_{t}"] = remaining // len(other_tickers)
+                st.session_state[f"val_{t}"] = remaining // len(other_tickers)
 
-    # 비중 입력 위젯 (슬라이더 + 숫자 입력창 가로 배치)
+    # 위젯 생성
     weights = {}
     for ticker in tickers:
         st.write(f"**{ticker}**")
         col_slider, col_num = st.columns([7, 3])
+        
+        # 슬라이더와 넘버인풋의 key를 다르게 설정하여 충돌 방지
         with col_slider:
-            st.slider("Slider", 0, 100, key=f"w_{ticker}", on_change=on_weight_change, args=(ticker,), label_visibility="collapsed")
+            st.slider("Slider", 0, 100, 
+                      key=f"slider_{ticker}", 
+                      value=st.session_state[f"val_{ticker}"],
+                      on_change=sync_weights, args=(ticker, f"slider"),
+                      label_visibility="collapsed")
         with col_num:
-            st.number_input("Num", 0, 100, key=f"w_{ticker}", on_change=on_weight_change, args=(ticker,), label_visibility="collapsed")
-        weights[ticker] = st.session_state[f"w_{ticker}"] / 100
+            st.number_input("Num", 0, 100, 
+                            key=f"num_{ticker}", 
+                            value=st.session_state[f"val_{ticker}"],
+                            on_change=sync_weights, args=(ticker, f"num"),
+                            label_visibility="collapsed")
+        
+        weights[ticker] = st.session_state[f"val_{ticker}"] / 100
 
-    total_w = sum(st.session_state[f"w_{t}"] for t in tickers)
+    total_w = sum(st.session_state[f"val_{t}"] for t in tickers)
     st.markdown(f"### 합계: `{total_w}%`")
     
     if total_w != 100 and len(tickers) > 0:
         if st.button("100% 맞춤 보정"):
-            st.session_state[f"w_{tickers[0]}"] += (100 - total_w)
+            st.session_state[f"val_{tickers[0]}"] += (100 - total_w)
             st.rerun()
 
     st.header("3. 기타 설정")
@@ -66,7 +82,7 @@ with st.sidebar:
     rebalance_option = st.selectbox("리밸런싱 주기", ["Monthly", "Yearly"])
 
 # -------------------
-# 2. 실행 조건 확인 및 연산
+# 2. 메인 연산 및 출력
 # -------------------
 if total_w == 100 and tickers:
     with st.spinner('데이터를 불러오는 중...'):
@@ -98,7 +114,10 @@ if total_w == 100 and tickers:
         st.subheader("🔢 핵심 성과 지표")
         v1, v2, v3 = st.columns(3)
         v1.metric("최종 가치", f"${(portfolio.iloc[-1]*1000):,.2f}")
-        v2.metric("평균 롤링 수익률", f"{(rolling_cagr.mean()*100):.2f}%" if rolling_cagr is not None else "N/A")
+        
+        # 롤링 수익률 계산 여부에 따른 처리
+        avg_rolling = f"{(rolling_cagr.mean()*100):.2f}%" if rolling_cagr is not None else "N/A"
+        v2.metric("평균 롤링 수익률", avg_rolling)
         v3.metric("최대 낙폭 (MDD)", f"{(mdd*100):.2f}%")
     else:
         st.warning("데이터를 가져오지 못했습니다. 티커를 확인해주세요.")
