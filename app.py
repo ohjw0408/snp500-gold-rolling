@@ -61,3 +61,25 @@ st.subheader("통계")
 st.write("평균 CAGR:", round(rolling_cagr.mean() * 100, 2), "%")
 st.write("최저 CAGR:", round(rolling_cagr.min() * 100, 2), "%")
 st.write("최대 낙폭 (MDD):", round(mdd * 100, 2), "%")
+
+# -------------------
+# 데이터 검증용 수치 및 표 출력
+# -------------------
+
+st.subheader("📊 데이터 검증 센터")
+
+# 1. 주요 지표 요약 (카드 형태)
+col1, col2, col3 = st.columns(3)
+col1.metric("최종 자산 (시작=1000)", f"{round(portfolio.iloc[-1] * 1000, 2)}")
+col2.metric("평균 롤링 CAGR", f"{round(rolling_cagr.mean() * 100, 2)}%")
+col3.metric("최대 낙폭 (MDD)", f"{round(mdd * 100, 2)}%")
+
+# 2. 연도별 수익률 표 (데이터 검증의 핵심)
+st.write("📅 연도별 포트폴리오 성과 (상세 데이터)")
+# 연간 수익률로 계산해서 보여주기
+annual_returns = portfolio.resample('Y').last().pct_change() * 100
+st.dataframe(annual_returns.style.format("{:.2f}%")) 
+
+# 3. 원본 월간 수익률 확인 (데이터 로더가 잘 작동하는지 확인)
+if st.checkbox("원본 월간 데이터(Monthly Returns) 보기"):
+    st.write(returns)
