@@ -59,6 +59,8 @@ with st.sidebar:
     # [수정] 롤링 기간을 데이터 길이에 따라 유연하게 선택하도록 조정
     years = st.number_input("롤링 수익률 분석 기간 (년)", min_value=1, max_value=40, value=5)
     rebalance_option = st.selectbox("리밸런싱 주기", ["Monthly", "Yearly"])
+    # [추가] 로그 스케일 선택 체크박스
+    use_log_scale = st.checkbox("차트 로그 스케일 적용", value=True, help="수십 년치 장기 데이터의 변동을 균형 있게 보려면 체크하세요.")
 
 # -------------------
 # 3. 메인 결과 출력
@@ -86,9 +88,16 @@ if abs(total_w - 1.0) < 0.001 and tickers:
                     with col1:
                         st.subheader("📈 원화 자산 성장 곡선")
                         fig1, ax1 = plt.subplots()
-                        # 1,000만 원 투자 기준
-                        ax1.plot(portfolio * 10000000, label="Portfolio (KRW)")
-                        ax1.set_yscale('log')
+                        # 초기 투자금 1,000만 원 기준
+                        ax1.plot(portfolio * 10000000, label="포트폴리오 (원화)")
+                        
+                        # [수정] 사용자가 체크했을 때만 로그 스케일 적용
+                        if use_log_scale:
+                            ax1.set_yscale('log')
+                            ax1.set_ylabel("자산 가치 (로그 스케일)")
+                        else:
+                            ax1.set_ylabel("자산 가치 (일반 스케일)")
+                            
                         ax1.legend()
                         st.pyplot(fig1)
                     
