@@ -1,36 +1,40 @@
 import pandas as pd
+import numpy as np
 
-def backtest(returns, weights, rebalance_option):
-    # 초기 설정
-    portfolio_value = 1.0
-    values = []
+def backtest(returns, weights, rebalance_option="Monthly"):
+    # 비중을 Series로 변환
+    w = pd.Series(weights)
     
-    # 날짜별로 루프를 돌며 수익률 계산
-    for date, row in returns.iterrows():
-        # 1. 현재 날짜에 데이터가 있는 자산들만 필터링
-        available_assets = row.dropna().index
-        if len(available_assets) == 0:
-            values.append(portfolio_value)
-            continue
-            
-        # 2. 이용 가능한 자산들의 설정 비중 합계 계산
-        current_weights = {t: weights[t] for t in available_assets}
-        total_w = sum(current_weights.values())
+    # 포트폴리오 가치를 저장할 Series (시작값 1.0)
+    portfolio_value = [1.0]
+    current_weights = w.copy()
+    
+    # 날짜별로 루프를 돌며 계산
+    for i in range(len(returns)):
+        # 1. 이번 달 수익률 적용
+        month_return = returns.iloc[i]
         
-        # 3. 비중 재분배 (비중 합이 1이 되도록 조정)
-        # 예: 원래 주식 50:비트 50인데 비트가 없으면 주식 100으로 계산
-        if total_w > 0:
-            normalized_weights = {t: w / total_w for t, w in current_weights.items()}
-        else:
-            values.append(portfolio_value)
-            continue
-            
-        # 4. 해당 달의 포트폴리오 수익률 계산
-        day_return = 0
-        for ticker in available_assets:
-            day_return += row[ticker] * normalized_weights[ticker]
-            
-        portfolio_value *= (1 + day_return)
-        values.append(portfolio_value)
+        # 자산별 가치 변화 반영
+        asset_values = current_weights * (1 + month_return)
+        total_value = asset_values.sum()
         
-    return pd.Series(values, index=returns.index)
+        # 전체 포트폴리오 수익률 반영
+        portfolio_value.append(portfolio_value[-1] * total_value)
+        
+        # 2. 리밸런싱 체크
+        # 자산별 비중이 수익률에 따라 변함
+        current_weights = asset_values / total_value
+        
+        # 리밸런싱 시점이라면 비중을 다시 초기 설정값(w)으로 리셋
+        if rebalance_option == "Monthly":
+            # 매월 리밸런싱
+            current_weights = w.copy()
+        elif rebalance_option == "Yearly":
+            # 12월(또는 1년의 마지막 달)에만 리밸런싱
+            if returns.index[i].month == 12:
+                current_weights = w.copy()
+        # "None" 옵션이 있다면 current_weights를 그대로 유지 (리밸런싱 안함)
+
+    # 결과 반환 (시작일 인덱스 맞춰주기)
+    result = pd.Series(portfolio_value[1:], index=returns.index)
+    return result
