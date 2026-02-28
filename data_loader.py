@@ -3,38 +3,40 @@ import pandas as pd
 
 START_DATE = "1970-01-01"
 
-ASSETS = {
-    "SP500": "SPY",   # ^SPY가 아니라 SPY입니다.
-    "Gold": "GLD"
-}
-
-def load_monthly_returns():
+def load_monthly_returns(tickers):
+    if not tickers:
+        return pd.DataFrame()
+    
     data = {}
+    for ticker in tickers:
+        try:
+            # 배당 포함 수익률을 위해 auto_adjust=True 유지 (원하시면 False로 변경 가능)
+            raw = yf.download(ticker, start=START_DATE, auto_adjust=True)
+            
+            if raw.empty:
+                continue
+                
+            # 최신 yfinance 버전의 멀티인덱스 대응
+            if isinstance(raw.columns, pd.MultiIndex):
+                price = raw["Close"][ticker]
+            else:
+                price = raw["Close"]
+                
+            data[ticker] = price
+        except Exception as e:
+            print(f"Error downloading {ticker}: {e}")
 
-    for name, ticker in ASSETS.items():
-        # 엑셀과 맞추기 위해 auto_adjust=False로 설정 (배당 제외 순수 주가)
-        raw = yf.download(ticker, start=START_DATE, auto_adjust=False)
-
-        # Close는 일반 종가, Adj Close는 배당 포함 수정 종가입니다.
-        # 엑셀 데이터가 배당 제외라면 'Close'를 사용하세요.
-        if "Close" in raw.columns:
-            price = raw["Close"]
-        else:
-            price = raw.iloc[:, 0] # 예외 처리
-
-        data[name] = price
+    if not data:
+        return pd.DataFrame()
 
     df = pd.concat(data.values(), axis=1)
     df.columns = data.keys()
     
-    # 2005년부터 보시려면 여기서 데이터를 잘라주면 검증이 더 쉽습니다.
-    df = df[df.index >= "2005-01-01"]
+    # 모든 자산의 데이터가 존재하는 기간만 남김 (교집합)
     df = df.dropna()
 
-    # 🔥 월말 기준 리샘플링
+    # 월말 기준 리샘플링 및 수익률 계산
     monthly_prices = df.resample("M").last()
-
-    # 월간 수익률 계산
     monthly_returns = monthly_prices.pct_change().dropna()
 
     return monthly_returns
