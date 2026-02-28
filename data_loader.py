@@ -39,7 +39,7 @@ PROSPECTUS_DB = {
 }
 
 def load_monthly_returns(tickers, interval="1mo"):
-    # 0. 환율 데이터 미리 준비 (환노출 자산 계산용)
+    # 환율 데이터 로드
     fx_obj = yf.download("USDKRW=X", start="1900-01-01", interval=interval, progress=False, auto_adjust=True)
     fx_price = fx_obj['Close']
     if interval == "1mo":
@@ -49,7 +49,6 @@ def load_monthly_returns(tickers, interval="1mo"):
     all_data = []
     for ticker in tickers:
         try:
-            # 자산 데이터 로드
             asset_obj = yf.download(ticker, start="1900-01-01", interval=interval, progress=False, auto_adjust=True)
             if asset_obj.empty: continue
             
@@ -60,19 +59,18 @@ def load_monthly_returns(tickers, interval="1mo"):
             asset_price = asset_price[~asset_price.index.duplicated(keep='last')].ffill()
             asset_raw_ret = asset_price.pct_change().fillna(0)
 
-            # 스마트 백필링 로직
-            is_unhedged = True # 기본값
+            # 백필링 및 환율 적용 로직
+            is_unhedged = True
             if ticker in PROSPECTUS_DB:
                 info = PROSPECTUS_DB[ticker]
-                bench_ticker = info["bench"] # 딕셔너리에서 티커 문자열만 추출
+                bench_ticker = info["bench"] # 딕셔너리 대응
                 is_unhedged = info["unhedged"]
                 
+                # 벤치마크 다운로드
                 bench_obj = yf.download(bench_ticker, start="1900-01-01", interval=interval, progress=False, auto_adjust=True)
                 if not bench_obj.empty:
                     bench_price = bench_obj['Close'][bench_ticker] if isinstance(bench_obj['Close'], pd.DataFrame) else bench_obj['Close']
-                    if interval == "1mo":
-                        bench_price.index = bench_price.index.to_period('M').to_timestamp('M')
-                    
+                    if interval == "1mo": bench_price.index = bench_price.index.to_period('M').to_timestamp('M')
                     bench_price = bench_price[~bench_price.index.duplicated(keep='last')].ffill()
                     bench_raw_ret = bench_price.pct_change().fillna(0)
                     
@@ -82,9 +80,7 @@ def load_monthly_returns(tickers, interval="1mo"):
                         asset_raw_ret = pd.concat([bench_before, asset_raw_ret])
                         asset_raw_ret = asset_raw_ret[~asset_raw_ret.index.duplicated(keep='last')]
 
-            # 환율 적용 (환노출 자산일 경우)
             if is_unhedged:
-                # 자산 날짜에 맞춰 환율 수익률 매칭
                 target_fx = fx_ret.reindex(asset_raw_ret.index).ffill().fillna(0)
                 asset_final_ret = (1 + asset_raw_ret) * (1 + target_fx) - 1
             else:
@@ -92,11 +88,8 @@ def load_monthly_returns(tickers, interval="1mo"):
             
             asset_final_ret.name = ticker
             all_data.append(asset_final_ret)
-            
-        except Exception as e:
-            continue
+        except: continue
     
     if not all_data: return pd.DataFrame()
-    
     df = pd.concat(all_data, axis=1).fillna(0)
     return df[~df.index.duplicated(keep='last')]
