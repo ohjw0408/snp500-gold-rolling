@@ -33,8 +33,19 @@ with st.sidebar:
         st.warning(f"합계: {int(total_w*100)}% (100%로 맞춰주세요)")
 
     st.header("3. 분석 기간 및 옵션")
-    start_date = st.date_input("시작 날짜", value=datetime(1990, 1, 1), min_value=datetime(1900, 1, 1))
-    end_date = st.date_input("종료 날짜", value=datetime.now(), min_value=datetime(1900, 1, 1))
+    # [수정] 날짜 락 해제: max_value를 현재로 설정
+    start_date = st.date_input(
+        "시작 날짜", 
+        value=datetime(1990, 1, 1), 
+        min_value=datetime(1900, 1, 1),
+        max_value=datetime.now()
+    )
+    end_date = st.date_input(
+        "종료 날짜", 
+        value=datetime.now(), 
+        min_value=datetime(1900, 1, 1),
+        max_value=datetime.now()
+    )
     
     st.divider()
     
@@ -43,7 +54,7 @@ with st.sidebar:
     years = st.number_input("롤링 수익률 분석 기간 (년)", min_value=1, max_value=40, value=5)
     rebalance_option = st.selectbox("리밸런싱 주기", ["Monthly", "Yearly"])
     
-    # [추가] 로그 스케일 선택 체크박스
+    # [추가] 로그 스케일 선택 박스
     use_log_scale = st.checkbox("차트 로그 스케일 적용", value=True)
 
 # -------------------
@@ -57,11 +68,12 @@ if abs(total_w - 1.0) < 0.001 and tickers:
             returns = load_monthly_returns(tickers, interval=interval)
             
             if not returns.empty:
+                # [수정] 데이터 슬라이싱 안전장치
                 mask = (returns.index >= pd.Timestamp(start_date)) & (returns.index <= pd.Timestamp(end_date))
                 filtered_returns = returns.loc[mask]
                 
                 if filtered_returns.empty:
-                    st.warning("⚠️ 해당 기간에 데이터가 없습니다.")
+                    st.warning("⚠️ 선택한 기간에 해당하는 데이터가 존재하지 않습니다. 시작 날짜를 조정해보세요.")
                 else:
                     portfolio = backtest(filtered_returns, weights, rebalance_option)
                     mdd = calculate_mdd(portfolio)
@@ -70,9 +82,9 @@ if abs(total_w - 1.0) < 0.001 and tickers:
                     with col1:
                         st.subheader("📈 자산 성장 곡선")
                         fig1, ax1 = plt.subplots()
-                        ax1.plot(portfolio * 1000, label="Portfolio")
+                        # 초기 투자금 1,000달러(또는 원) 기준
+                        ax1.plot(portfolio * 1000, label="Portfolio Value")
                         
-                        # [수정] 로그 스케일 적용 로직
                         if use_log_scale:
                             ax1.set_yscale('log')
                             ax1.set_ylabel("Value (Log Scale)")
@@ -101,6 +113,6 @@ if abs(total_w - 1.0) < 0.001 and tickers:
                     m2.metric(f"평균 {years}년 수익률", avg_r)
                     m3.metric("최대 낙폭 (MDD)", f"{(mdd*100):.2f}%")
             else:
-                st.error("데이터 로드에 실패했습니다.")
+                st.error("데이터를 불러오지 못했습니다. 티커명이 올바른지 확인해주세요.")
 else:
-    st.info("비중 합계를 100%로 맞춰주세요.")
+    st.info("사이드바에서 자산 비중 합계를 100%로 맞춰주세요.")
