@@ -32,27 +32,25 @@ with st.sidebar:
     else:
         st.warning(f"합계: {int(total_w*100)}% (100%로 맞춰주세요)")
 
-    st.header("3. 분석 및 기간 설정")
+    st.header("3. 분석 기간 설정")
     
-    # 오늘 날짜를 기준으로 설정 (현재 2026년 2월)
-    today = datetime.now()
+    # [핵심 변경] 달력 대신 드롭다운/숫자로 연도 직접 선택
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        s_year = st.number_input("시작 연도", 1900, 2026, 1990)
+    with col_s2:
+        s_month = st.selectbox("시작 월", range(1, 13), index=0)
     
-    # 시작 날짜: 1900년부터 오늘까지 모두 선택 가능하게 범위를 넓혔습니다.
-    start_date = st.date_input(
-        "시작 날짜",
-        value=datetime(1990, 1, 1), # 기본 표시 날짜
-        min_value=datetime(1900, 1, 1),
-        max_value=today
-    )
+    col_e1, col_e2 = st.columns(2)
+    with col_e1:
+        e_year = st.number_input("종료 연도", 1900, 2026, 2026)
+    with col_e2:
+        e_month = st.selectbox("종료 월", range(1, 13), index=1) # 2월
+
+    start_date = datetime(s_year, s_month, 1)
+    end_date = datetime(e_year, e_month, 1)
     
-    # 종료 날짜: 1900년부터 오늘까지만 선택 가능 (미래 날짜 차단)
-    end_date = st.date_input(
-        "종료 날짜",
-        value=today,
-        min_value=datetime(1900, 1, 1),
-        max_value=today
-    )
-    
+    st.divider()
     years = st.slider("롤링 기간 (년)", 1, 20, 5)
     rebalance_option = st.selectbox("리밸런싱 주기", ["Monthly", "Yearly"])
 
@@ -67,19 +65,19 @@ if abs(total_w - 1.0) < 0.001 and tickers:
             returns = load_monthly_returns(tickers)
             
             if not returns.empty:
-                # 사용자가 지정한 기간으로 데이터 자르기
                 mask = (returns.index >= pd.Timestamp(start_date)) & (returns.index <= pd.Timestamp(end_date))
                 filtered_returns = returns.loc[mask]
                 
                 if filtered_returns.empty:
-                    st.warning("⚠️ 선택한 기간에 데이터가 없습니다. 자산 상장일 이후를 선택해 주세요.")
+                    st.warning("⚠️ 해당 기간에 데이터가 없습니다. 자산 상장일 이후를 선택해 주세요.")
                 else:
                     portfolio = backtest(filtered_returns, weights, rebalance_option)
                     mdd = calculate_mdd(portfolio)
 
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.subheader("📈 자산 성장 곡선")
+                        st.subheader(f"📈 자산 성장 곡선")
+                        st.caption(f"분석 기간: {start_date.strftime('%Y-%m')} ~ {end_date.strftime('%Y-%m')}")
                         fig1, ax1 = plt.subplots()
                         ax1.plot(portfolio * 1000)
                         st.pyplot(fig1)
@@ -91,7 +89,7 @@ if abs(total_w - 1.0) < 0.001 and tickers:
                             rolling_cagr.plot(ax=ax2, color='orange')
                             st.pyplot(fig2)
                         else:
-                            st.info("기간이 너무 짧아 롤링 수익률을 계산할 수 없습니다.")
+                            st.info("선택한 기간이 롤링 기간보다 짧습니다.")
 
                     st.divider()
                     st.subheader("🔢 성과 요약")
