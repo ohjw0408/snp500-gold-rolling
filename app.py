@@ -22,7 +22,7 @@ with st.sidebar:
 st.header("2. 비중 설정")
     
     # 세션 상태 초기화 (기존과 동일)
-    if 'prev_tickers' not in st.session_state or st.session_state.prev_tickers != tickers:
+if 'prev_tickers' not in st.session_state or st.session_state.prev_tickers != tickers:
         st.session_state.prev_tickers = tickers
         n = len(tickers)
         for t in tickers:
