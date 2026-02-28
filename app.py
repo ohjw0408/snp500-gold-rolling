@@ -19,17 +19,18 @@ with st.sidebar:
     ticker_input = st.text_input("티커 입력 (쉼표로 구분)", "SPY, TLT, GLD, BTC-USD")
     tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
 
-    st.header("2. 비중 설정")
+st.header("2. 비중 설정")
     
-    # 세션 상태 초기화: 티커가 바뀌면 비중도 초기화
+    # 세션 상태 초기화 (기존과 동일)
     if 'prev_tickers' not in st.session_state or st.session_state.prev_tickers != tickers:
         st.session_state.prev_tickers = tickers
         n = len(tickers)
         for t in tickers:
             st.session_state[f"w_{t}"] = 100 // n if n > 0 else 0
 
-    # 비중 자동 조절 함수 (핵심 로직)
+    # 비중 자동 조절 함수
     def on_weight_change(changed_ticker):
+        # slider나 number_input 중 무엇으로 바꿔도 이 키값으로 들어옵니다.
         new_val = st.session_state[f"w_{changed_ticker}"]
         other_tickers = [t for t in tickers if t != changed_ticker]
         
@@ -48,21 +49,40 @@ with st.sidebar:
             for t in other_tickers:
                 st.session_state[f"w_{t}"] = remaining // len(other_tickers)
 
-    # 슬라이더 생성 (key가 중복되지 않도록 설정됨)
+    # 슬라이더 + 키보드 입력창 생성
     weights = {}
     for ticker in tickers:
-        w = st.slider(
-            f"{ticker} 비중 (%)", 
-            0, 100, 
-            key=f"w_{ticker}", 
-            on_change=on_weight_change, 
-            args=(ticker,)
-        )
-        weights[ticker] = w / 100
+        # 1. 티커 이름 표시
+        st.write(f"**{ticker}**")
+        
+        # 2. 가로로 배치 (슬라이더 7 : 입력창 3 비율)
+        col_slider, col_input = st.columns([7, 3])
+        
+        with col_slider:
+            # 슬라이더 (라벨은 빈칸으로 처리해서 깔끔하게)
+            st.slider(
+                "비중 조절", 0, 100, 
+                key=f"w_{ticker}", 
+                on_change=on_weight_change, 
+                args=(ticker,),
+                label_visibility="collapsed"
+            )
+            
+        with col_input:
+            # 키보드 입력창 (슬라이더와 같은 key를 공유하여 자동 동기화)
+            st.number_input(
+                "숫자 입력", 0, 100, 
+                key=f"w_{ticker}", 
+                on_change=on_weight_change, 
+                args=(ticker,),
+                label_visibility="collapsed"
+            )
+        
+        weights[ticker] = st.session_state[f"w_{ticker}"] / 100
 
-    # 합계 표시 및 보정
+    # 합계 표시 및 보정 (기존과 동일)
     total_w = sum(st.session_state[f"w_{t}"] for t in tickers)
-    st.markdown(f"**현재 합계: {total_w}%**")
+    st.markdown(f"### 현재 합계: `{total_w}%`")
     
     if total_w != 100 and len(tickers) > 0:
         if st.button("100% 맞춤 보정"):
