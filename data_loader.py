@@ -5,28 +5,28 @@ def load_monthly_returns(tickers):
     if not tickers: return pd.DataFrame()
     data = {}
     
-    # 1990년으로 시작일을 변경하여 SPY의 탄생(1993)부터 가져오게 합니다.
+    # 시작일을 1900년으로 설정하여 지수(Index)의 전체 역사를 가져옵니다.
     for ticker in tickers:
         try:
-            raw = yf.download(ticker, start="1990-01-01", auto_adjust=True)
+            raw = yf.download(ticker, start="1900-01-01", auto_adjust=True)
             if not raw.empty:
+                # 지수 데이터는 보통 'Close' 컬럼에 들어있습니다.
                 if isinstance(raw.columns, pd.MultiIndex):
                     data[ticker] = raw["Close"][ticker]
                 else:
                     data[ticker] = raw["Close"]
-        except: continue
+        except Exception as e:
+            print(f"{ticker} 에러: {e}")
+            continue
 
     if not data: return pd.DataFrame()
 
-    # 데이터를 합칩니다. (이때 데이터가 없는 기간은 NaN으로 남습니다)
     df = pd.concat(data.values(), axis=1)
     df.columns = data.keys()
     
-    # 빈칸을 직전 값으로 채우되, 아예 데이터가 시작도 안 한 앞부분(NaN)은 둡니다.
+    # 앞부분 빈칸(상장 전)은 그대로 두고, 중간 공휴일 빈칸만 채웁니다.
     df = df.ffill()
     
-    # 월말 종가로 리샘플링
+    # 월말 종가 리샘플링 및 수익률 계산
     monthly_prices = df.resample("M").last()
-    
-    # 수익률 계산 (여기서 dropna를 하면 안 됩니다!)
     return monthly_prices.pct_change()
