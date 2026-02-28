@@ -5,10 +5,10 @@ def load_monthly_returns(tickers):
     if not tickers: return pd.DataFrame()
     data = {}
     
+    # 1990년으로 시작일을 변경하여 SPY의 탄생(1993)부터 가져오게 합니다.
     for ticker in tickers:
         try:
-            # 2005년부터 데이터를 최대한 긁어옵니다.
-            raw = yf.download(ticker, start="2005-01-01", auto_adjust=True)
+            raw = yf.download(ticker, start="1990-01-01", auto_adjust=True)
             if not raw.empty:
                 if isinstance(raw.columns, pd.MultiIndex):
                     data[ticker] = raw["Close"][ticker]
@@ -18,13 +18,15 @@ def load_monthly_returns(tickers):
 
     if not data: return pd.DataFrame()
 
+    # 데이터를 합칩니다. (이때 데이터가 없는 기간은 NaN으로 남습니다)
     df = pd.concat(data.values(), axis=1)
     df.columns = data.keys()
     
-    # 🔥 [중요] dropna()를 하지 않고 ffill만 해서 빈칸을 둡니다.
-    # 비어있는 칸은 나중에 portfolio.py에서 알아서 제외하고 계산합니다.
+    # 빈칸을 직전 값으로 채우되, 아예 데이터가 시작도 안 한 앞부분(NaN)은 둡니다.
     df = df.ffill()
     
-    # 월말 종가로 변환
+    # 월말 종가로 리샘플링
     monthly_prices = df.resample("M").last()
-    return monthly_prices.pct_change() # 첫 줄 NaN은 나중에 처리됨
+    
+    # 수익률 계산 (여기서 dropna를 하면 안 됩니다!)
+    return monthly_prices.pct_change()
